@@ -1,0 +1,276 @@
+# ==========================================================
+# SMART HOME DIGITAL TWIN
+# PART 1 : INITIALIZATION
+# ==========================================================
+# -------------------------------
+# Import Required Libraries
+# -------------------------------
+import sys
+import site
+user_site = site.getusersitepackages()
+if user_site not in sys.path:
+    sys.path.append(user_site)
+import serial
+import bpy
+import aud
+import math
+import time
+
+# ==========================================================
+# UART SETTINGS
+# ==========================================================
+COM_PORT = "COM3"
+BAUD_RATE = 9600
+UPDATE_TIME = 0.016    
+# ==========================================================
+# SOUND FILES
+# ==========================================================
+FIRE_SOUND = r"C:\Users\suraj\OneDrive\Desktop\fire_siren.wav"
+GAS_SOUND  = r"C:\Users\suraj\OneDrive\Desktop\gas_siren.wav"
+audio = aud.Device()
+fireHandle = None
+gasHandle  = None
+
+Door = bpy.data.objects["Door_Pivot"]
+Fan = bpy.data.objects["Fan_Hub"]
+
+Light1 = bpy.data.objects["Interior_Lamp"]
+Light2 = bpy.data.objects["Interior_Lamp.001"]
+
+Tube = bpy.data.objects["Tube_Light"]
+FireBulb = bpy.data.objects["Fire_Bulb"]
+
+FireBox  = bpy.data.objects["Fire_Box"]
+GasBox   = bpy.data.objects["Gas_Box"]
+TempBox  = bpy.data.objects["Temp_Box"]
+LightBox = bpy.data.objects["Light_Box"]
+DoorBox  = bpy.data.objects["Door_Box"]
+BannerBox = bpy.data.objects["Banner_Box"]
+
+FireText  = bpy.data.objects["Fire_Status"]
+GasText   = bpy.data.objects["Gas_Status"]
+TempText  = bpy.data.objects["Temp_Status"]
+LightText = bpy.data.objects["Light_Status"]
+DoorText  = bpy.data.objects["Door_Status"]
+BannerText = bpy.data.objects["Banner_Text"]
+
+GREEN = (0,1,0,1)
+RED   = (1,0,0,1)
+
+DOOR_OPEN  = math.radians(0)
+DOOR_CLOSE = math.radians(100)
+DOOR_SPEED = math.radians(180)
+FAN_SPEED = math.radians(720)     
+LIGHT_POWER = 250
+FIRE_POWER = 1000
+doorOpen = False
+doorTimer = 0
+
+fire = False
+gas = False
+temp = False
+light = False
+
+fanSpeed = 0
+device = None
+print("Initialization Complete"
+try:
+    ser = serial.Serial(
+        COM_PORT,
+        BAUD_RATE,
+        timeout=0.05
+    )
+    print("UART Connected"
+except Exception as e:
+    print(e)
+    ser = None
+
+def set_box(box, color):
+    if not box.material_slots:
+        return
+    mat = box.material_slots[0].material
+    if not mat:
+        return
+
+    mat.use_nodes = True
+    bsdf = mat.node_tree.nodes["Principled BSDF"]
+    bsdf.inputs["Base Color"].default_value = color
+    if "Emission Color" in bsdf.inputs:
+        bsdf.inputs["Emission Color"].default_value = color
+    if "Emission Strength" in bsdf.inputs:
+        bsdf.inputs["Emission Strength"].default_value = 2
+
+def set_text(obj, text):
+    obj.data.body = text
+
+def set_emission(strength):
+    mat = Tube.material_slots[0].material
+    if not mat:
+        return
+    bsdf = mat.node_tree.nodes["Principled BSDF"]
+    if "Emission Strength" in bsdf.inputs:
+        bsdf.inputs["Emission Strength"].default_value = strength
+
+def play_sound(handle, path):
+    if handle is None:
+        handle = audio.play(aud.Sound(path))
+        handle.loop_count = -1
+    return handle
+
+def stop_sound(handle):
+    if handle:
+        handle.stop()
+    return None
+
+def process_state(state):
+
+    global fire
+    global gas
+    global temp
+    global light
+
+    global doorOpen
+    global doorTimer
+
+    state = state.upper()
+
+    fire  = "F" in state
+    gas   = "G" in state
+    temp  = "T" in state
+    light = "L" in state
+
+    if "D" in state:
+
+        doorOpen = True
+        doorTimer = time.time() + 3
+def read_uart():
+    if ser is None:
+        return
+    while ser.in_waiting:
+        line = ser.readline().decode(
+            "utf-8",
+            errors="ignore"
+        ).strip()
+        if not line.upper().startswith("STATE:"):
+            continue
+        state = line[6:].strip()
+        print("RX :", state)
+        process_state(state)
+
+def update_dashboard():
+    set_box(FireBox, RED if fire else GREEN)
+    set_text(FireText, "ALERT" if fire else "SAFE")
+    set_box(GasBox, RED if gas else GREEN)
+    set_text(GasText, "ALERT" if gas else "SAFE")
+    set_box(TempBox, RED if temp else GREEN)
+    set_text(TempText, "ALERT" if temp else "SAFE")
+    set_box(LightBox, RED if light else GREEN)
+    set_text(LightText, "ON" if light else "OFF")
+    set_box(DoorBox, RED if doorOpen else GREEN)
+    set_text(DoorText, "OPEN" if doorOpen else "CLOSED")
+    if fire:
+        msg = "FIRE DETECTED"
+        clr = RED
+    elif gas:
+        msg = "GAS LEAK DETECTED"
+        clr = RED
+    elif temp:
+        msg = "HIGH TEMPERATURE"
+        clr = RED
+    else:
+        msg = "ALL SYSTEMS NORMAL"
+        clr = GREEN
+    set_box(BannerBox, clr)
+    set_text(BannerText, msg)
+def update_door():
+    global doorOpen
+    if doorOpen and time.time() >= doorTimer:
+        doorOpen = False
+
+    target = DOOR_OPEN if doorOpen else DOOR_CLOSE
+    current = Door.rotation_euler.z
+    step = DOOR_SPEED * UPDATE_TIME
+    if abs(target-current) < step:
+        Door.rotation_euler.z = target
+    elif target > current:
+        Door.rotation_euler.z += step
+    else:
+        Door.rotation_euler.z -= step
+def update_fan():
+    global fanSpeed
+    target = FAN_SPEED if temp else 0
+    if fanSpeed < target:
+        fanSpeed = min(
+            fanSpeed + math.radians(360)*UPDATE_TIME,
+            target
+        )
+    elif fanSpeed > target:
+        fanSpeed = max(
+            fanSpeed - math.radians(360)*UPDATE_TIME,
+            target
+        )
+    Fan.rotation_euler.z += fanSpeed * UPDATE_TIME
+def update_lights():
+    power = LIGHT_POWER if light else 0
+    Light1.data.energy = power
+    Light2.data.energy = power
+    set_emission(10 if light else 0)
+def update_fire():
+    FireBulb.hide_viewport = False
+    FireBulb.hide_render = False
+    if fire:
+        blink = (time.time() % 0.5) < 0.25
+        FireBulb.data.energy = FIRE_POWER if blink else 0
+    else:
+        FireBulb.data.energy = 0
+
+def update_audio():
+    global fireHandle
+    global gasHandle
+    if fire:
+        fireHandle = play_sound(
+            fireHandle,
+            FIRE_SOUND
+        )
+    else:
+        fireHandle = stop_sound(
+            fireHandle
+        )
+
+    if gas:
+        gasHandle = play_sound(
+            gasHandle,
+            GAS_SOUND
+        )
+    else:
+        gasHandle = stop_sound(
+            gasHandle
+        )
+def timer():
+    read_uart()
+    update_door()
+    update_fan()
+    update_lights()
+    update_fire()
+    update_dashboard()
+    update_audio()
+
+    return UPDATE_TIME
+
+try:
+    if bpy.app.timers.is_registered(timer):
+        bpy.app.timers.unregister(timer)
+except:
+    pass
+
+bpy.app.timers.register(timer)
+
+print("========================================")
+print(" SMART HOME DIGITAL TWIN STARTED")
+print("========================================")
+print("UART Port :", COM_PORT)
+print("Baud Rate :", BAUD_RATE)
+print("Update    :", UPDATE_TIME, "sec")
+print("Waiting for FPGA data...")
+print("========================================")
+

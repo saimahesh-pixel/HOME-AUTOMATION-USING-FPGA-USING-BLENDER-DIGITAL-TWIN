@@ -1,0 +1,7 @@
+0.7
+2020.2
+Nov 14 2025
+19:37:27
+C:/Users/saima/project_k/project_k.sim/sim_1/behav/xsim/glbl.v,1756381829,verilog,,,,glbl,,,,,,,,
+C:/Users/saima/project_k/project_k.srcs/sources_1/new/Ultrasonic_tb.v,1783007184,verilog,,,,tb_ultrasonic_display_top,,,../../../../../../../AMDDesignTools/2025.2/Vivado/data/rsb/busdef,,,,,
+C:/Users/saima/project_k/project_k.srcs/sources_1/new/mini.v,1782983423,verilog,,C:/Users/saima/project_k/project_k.srcs/sources_1/new/Ultrasonic_tb.v,,sensor_fsm;seven_seg_ctrl;uart_message_sender;uart_tx_module;ultrasonic_ctrl;ultrasonic_display_top,,,../../../../../../../AMDDesignTools/2025.2/Vivado/data/rsb/busdef,,,,,
